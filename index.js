@@ -10,13 +10,13 @@ const app = express();
 /* Middleware */
 app.use(cors({ origin: "*" }));
 app.use(express.json());
-
 const SECRET = process.env.JWT_SECRET || "supersecretkey";
 
 /* MongoDB */
-mongoose.connect(process.env.MONGO_URI)
+mongoose
+  .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
-  .catch(err => {
+  .catch((err) => {
     console.error(err);
     process.exit(1);
   });
@@ -44,13 +44,15 @@ const slipSchema = new mongoose.Schema({
   date: { type: String, required: true },
   access: { type: String, default: "free" },
   totalOdds: { type: Number, default: 1 },
-  games: [{
-    home: String,
-    away: String,
-    odd: Number,
-    overUnder: String,
-    result: { type: String, default: "pending" },
-  }],
+  games: [
+    {
+      home: String,
+      away: String,
+      odd: Number,
+      overUnder: String,
+      result: { type: String, default: "pending" },
+    },
+  ],
 });
 
 const User = mongoose.model("User", userSchema);
@@ -69,7 +71,7 @@ app.use(async (req, res, next) => {
   next();
 });
 
-/* Auth */
+/* AUTH */
 app.post("/register", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -137,7 +139,18 @@ app.get("/profile", async (req, res) => {
   }
 });
 
-/* Admin */
+/* REQUEST SUBSCRIPTION */
+app.post("/request-subscription", async (req, res) => {
+  try {
+    const { email, plan, message } = req.body;
+    await SubscriptionRequest.create({ email, plan, message });
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ success: false });
+  }
+});
+
+/* ADMIN */
 function verifyAdmin(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(403).json({ success: false });
@@ -184,7 +197,7 @@ app.post("/approve-request", verifyAdmin, async (req, res) => {
   res.json({ success: true });
 });
 
-/* Slips */
+/* SLIPS */
 app.post("/slips", async (req, res) => {
   const { date, games, access, totalOdds } = req.body;
   if (!games?.length) return res.json({ success: false });
@@ -201,10 +214,7 @@ app.get("/slips", async (req, res) => {
 
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const total = await Slip.countDocuments(query);
-  const slips = await Slip.find(query)
-    .skip(skip)
-    .limit(parseInt(limit))
-    .sort({ date: -1 });
+  const slips = await Slip.find(query).skip(skip).limit(parseInt(limit)).sort({ date: -1 });
 
   res.json({
     success: true,
@@ -223,6 +233,6 @@ app.post("/slip-result", verifyAdmin, async (req, res) => {
   res.json({ success: true });
 });
 
-/* Start */
+/* START */
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Running on port ${PORT}`)); 
