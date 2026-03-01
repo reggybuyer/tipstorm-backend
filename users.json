@@ -1,0 +1,22 @@
+[
+  {
+    "email": "admin@test.com",
+    "role": "admin",
+    "plan": "admin",
+    "approved": true
+  },
+  {
+    "email": "premium@test.com",
+    "role": "user",
+    "plan": "premium",
+    "approved": true,
+    "expiresAt": "2026-03-20T00:00:00Z"
+  },
+  {
+    "email": "free@test.com",
+    "role": "user",
+    "plan": "free",
+    "approved": true,
+    "expiresAt": null
+  }
+] 

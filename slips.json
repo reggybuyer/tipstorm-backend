@@ -1,0 +1,141 @@
+[
+  {
+    "date": "2026-04-03",
+    "vip": false,
+    "premium": false,
+    "free": true,
+    "games": [
+      {
+        "home": "Mahasarakham united",
+        "away": "Bangkok",
+        "odd": 1.2,
+        "overUnder": "1/2",
+        "result": "Won"
+      },
+      {
+        "home": "St.Gallen",
+        "away": "Basel",
+        "odd": 1.2,
+        "overUnder": "+ 1.5",
+        "result": "Won"
+      },
+      {
+        "home": "Valencia",
+        "away": "Athletic club",
+        "odd": 1.4,
+        "overUnder": "+1.5 ",
+        "result": "Won"
+      },
+      {
+        "home": "Nice",
+        "away": "Montpellier",
+        "odd": 1.2,
+        "overUnder": "1/2",
+        "result": "Won"
+      }
+    ]
+  },
+  {
+    "date": "2026-03-02",
+    "vip": false,
+    "premium": true,
+    "free": false,
+    "games": [
+      {
+        "home": "Hull city",
+        "away": "Watford",
+        "odd": 2.35,
+        "overUnder": "Home",
+        "result": "Lost"
+      }
+    ]
+  },
+  {
+    "date": "2026-03-02",
+    "vip": true,
+    "premium": true,
+    "free": false,
+    "games": [
+      {
+        "home": "Hull city",
+        "away": "Watford",
+        "odd": 2.35,
+        "overUnder": "Home",
+        "result": "Won"
+      }
+    ]
+  },
+  {
+    "date": "2026-03-02",
+    "premium": false,
+    "vip": false,
+    "free": true,
+    "games": [
+      {
+        "home": "Bologna",
+        "away": "Ac milan",
+        "odd": 1.33,
+        "overUnder": "over 1.5",
+        "result": "Won"
+      },
+      {
+        "home": "Maqaba",
+        "away": "Sitra",
+        "odd": 1.3,
+        "overUnder": "1/2",
+        "result": "Won"
+      },
+      {
+        "home": "Portsmouth",
+        "away": "Ipswich Town",
+        "odd": 1.36,
+        "overUnder": "over 1.5",
+        "result": "Won"
+      }
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "games": [
+      {
+        "home": "Arsenal",
+        "away": "Chelsea",
+        "odd": 1.45,
+        "overUnder": "",
+        "result": "Won"
+      },
+      {
+        "home": "Real Madrid",
+        "away": "Barcelona",
+        "odd": 1.75,
+        "overUnder": "",
+        "result": "Won"
+      }
+    ],
+    "premium": true,
+    "vip": false,
+    "free": false
+  },
+  {
+    "date": "2026-01-25",
+    "games": [
+      {
+        "home": "Liverpool",
+        "away": "Man United",
+        "odd": 1.2,
+        "overUnder": "",
+        "result": "Won"
+      },
+      {
+        "home": "Bayern",
+        "away": "Dortmund",
+        "odd": 1.3,
+        "overUnder": "",
+        "result": "Won"
+      }
+    ],
+    "premium": false,
+    "vip": false,
+    "free": true
+  }
+]
