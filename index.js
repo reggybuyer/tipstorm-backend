@@ -8,19 +8,17 @@ const jwt = require("jsonwebtoken");
 const app = express();
 
 /* ================= MIDDLEWARE ================= */
-
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 const SECRET = process.env.JWT_SECRET || "supersecretkey";
 
 /* ================= MONGODB ================= */
-
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch((err) => {
-    console.error(err);
+    console.error("MongoDB Error:", err);
     process.exit(1);
   });
 
@@ -60,11 +58,13 @@ const slipSchema = new mongoose.Schema({
 });
 
 const User = mongoose.model("User", userSchema);
-const SubscriptionRequest = mongoose.model("SubscriptionRequest", requestSchema);
+const SubscriptionRequest = mongoose.model(
+  "SubscriptionRequest",
+  requestSchema
+);
 const Slip = mongoose.model("Slip", slipSchema);
 
 /* ================= AUTO EXPIRE PREMIUM ================= */
-
 app.use(async (req, res, next) => {
   try {
     const now = new Date();
@@ -72,12 +72,13 @@ app.use(async (req, res, next) => {
       { premium: true, expiresAt: { $lt: now } },
       { premium: false, plan: "free", expiresAt: null }
     );
-  } catch {}
+  } catch (err) {
+    console.log("Auto expire error:", err.message);
+  }
   next();
 });
 
-/* ================= AUTH ================= */
-
+/* ================= AUTH MIDDLEWARE ================= */
 function verifyAdmin(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(403).json({ success: false });
@@ -95,7 +96,6 @@ function verifyAdmin(req, res, next) {
 }
 
 /* ================= REGISTER ================= */
-
 app.post("/register", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -104,6 +104,7 @@ app.post("/register", async (req, res) => {
     if (exists) return res.status(400).json({ success: false });
 
     const hashed = bcrypt.hashSync(password, 10);
+
     await User.create({ email, password: hashed });
 
     res.json({ success: true });
@@ -113,12 +114,11 @@ app.post("/register", async (req, res) => {
 });
 
 /* ================= LOGIN ================= */
-
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email);
+    const user = await User.findOne({ email });
     if (!user) return res.json({ success: false });
 
     const match = bcrypt.compareSync(password, user.password);
@@ -147,7 +147,6 @@ app.post("/login", async (req, res) => {
 });
 
 /* ================= PROFILE ================= */
-
 app.get("/profile", async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
@@ -155,7 +154,6 @@ app.get("/profile", async (req, res) => {
 
     const decoded = jwt.verify(token, SECRET);
     const user = await User.findById(decoded.id);
-
     if (!user) return res.status(404).json({ success: false });
 
     res.json({
@@ -174,7 +172,6 @@ app.get("/profile", async (req, res) => {
 });
 
 /* ================= SUBSCRIPTION REQUEST ================= */
-
 app.post("/request-subscription", async (req, res) => {
   try {
     const { email, plan, message } = req.body;
@@ -186,7 +183,6 @@ app.post("/request-subscription", async (req, res) => {
 });
 
 /* ================= ADMIN ROUTES ================= */
-
 app.get("/all-users", verifyAdmin, async (req, res) => {
   const users = await User.find();
   res.json({ success: true, users });
@@ -214,6 +210,7 @@ app.post("/approve-request", verifyAdmin, async (req, res) => {
     user.expiresAt = new Date(
       Date.now() + duration * 24 * 60 * 60 * 1000
     );
+
     await user.save();
   }
 
@@ -224,7 +221,6 @@ app.post("/approve-request", verifyAdmin, async (req, res) => {
 });
 
 /* ================= CREATE SLIP ================= */
-
 app.post("/slips", verifyAdmin, async (req, res) => {
   const { date, games, access } = req.body;
 
@@ -243,32 +239,25 @@ app.post("/slips", verifyAdmin, async (req, res) => {
     date,
     access,
     totalOdds,
-    games: games.map((g) => ({
-      home: g.home,
-      away: g.away,
-      odd: g.odd,
-      type: g.type,
-      line: g.line,
-      result: "pending",
-    })),
+    games,
   });
 
   res.json({ success: true, slip });
 });
 
 /* ================= GET SLIPS ================= */
-
 app.get("/slips", async (req, res) => {
   const { date, page = 1, limit = 10 } = req.query;
 
   let query = {};
   if (date) query.date = date;
 
-  const skip = (page - 1) * limit;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+
   const total = await Slip.countDocuments(query);
 
   const slips = await Slip.find(query)
-    .skip(parseInt(skip))
+    .skip(skip)
     .limit(parseInt(limit))
     .sort({ date: -1 });
 
@@ -280,7 +269,6 @@ app.get("/slips", async (req, res) => {
 });
 
 /* ================= UPDATE RESULT ================= */
-
 app.post("/slip-result", verifyAdmin, async (req, res) => {
   const { slipId, gameIndex, result } = req.body;
 
@@ -294,7 +282,6 @@ app.post("/slip-result", verifyAdmin, async (req, res) => {
 });
 
 /* ================= EDIT SLIP ================= */
-
 app.put("/slips/:id", verifyAdmin, async (req, res) => {
   const { id } = req.params;
   const { date, access, games } = req.body;
@@ -318,7 +305,6 @@ app.put("/slips/:id", verifyAdmin, async (req, res) => {
 });
 
 /* ================= DELETE SLIP ================= */
-
 app.delete("/slips/:id", verifyAdmin, async (req, res) => {
   const { id } = req.params;
 
@@ -332,6 +318,8 @@ app.delete("/slips/:id", verifyAdmin, async (req, res) => {
 });
 
 /* ================= START SERVER ================= */
-
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 
+
+app.listen(PORT, () =>
+  console.log(`Server running on port ${PORT}`)
+); 
