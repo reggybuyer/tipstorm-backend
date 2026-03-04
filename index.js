@@ -8,7 +8,7 @@ const jwt = require("jsonwebtoken");
 const app = express();
 const SECRET = process.env.JWT_SECRET || "supersecretkey";
 
-/* ================= CORS FIX ================= */
+/* ================= CORS ================= */
 app.use(cors({
   origin: [
     "http://localhost:3000",
@@ -30,6 +30,7 @@ app.use((req, res, next) => {
 app.use(express.json());
 
 /* ================= DATABASE ================= */
+// using MongoDB
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch(err => {
@@ -261,8 +262,8 @@ app.put("/slips/:id", verifyAdmin, async (req, res) => {
   slip.access = access;
   slip.totalOdds = totalOdds;
   slip.games = games;
-  await slip.save();
 
+  await slip.save();
   res.json({ success: true, slip });
 });
 
@@ -284,7 +285,6 @@ app.post("/slip-result", verifyAdmin, async (req, res) => {
 
   slip.games[gameIndex].result = result;
   await slip.save();
-
   res.json({ success: true });
 });
 
