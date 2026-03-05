@@ -10,15 +10,15 @@ const SECRET = process.env.JWT_SECRET || "supersecretkey";
 
 /* ================= CORS ================= */
 app.use(cors({
-  origin: [
-    "https:                               
-    "//tipstorm-frontend.vercel.app",
-    "http://localhost:3000"
+  origin:[
+    "https://tipstorm-frontend.vercel.app",
+    "https://localhost:3000"
   ],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true
+  methods:["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Contents-Type", "Authorization"],
+  credentials:true
 }));
+  
 app.use(express.json());
 
 /* ================= DATABASE ================= */
