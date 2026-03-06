@@ -7,33 +7,40 @@ const bcrypt = require("bcryptjs")
 const jwt = require("jsonwebtoken")
 
 const app = express()
-
 const SECRET = process.env.JWT_SECRET || "tipstormsecret"
 
-/* ================= BASIC MIDDLEWARE ================= */
+/* ================= MIDDLEWARE ================= */
 
 app.use(express.json())
 
 app.use(cors({
-  origin:[
+  origin: [
     "https://tipstorm-frontend.vercel.app",
     "http://localhost:3000"
   ],
+  methods:["GET","POST","PUT","DELETE","OPTIONS"],
+  allowedHeaders:["Content-Type","Authorization"],
   credentials:true
 }))
 
-/* ================= HEALTH CHECK ================= */
+app.use((req,res,next)=>{
+  res.header("Access-Control-Allow-Origin", req.headers.origin || "*")
+  res.header("Access-Control-Allow-Methods","GET,POST,PUT,DELETE,OPTIONS")
+  res.header("Access-Control-Allow-Headers","Content-Type,Authorization")
+  res.header("Access-Control-Allow-Credentials","true")
+  if(req.method === "OPTIONS") return res.sendStatus(204)
+  next()
+})
+
+/* ================= HEALTH ================= */
 
 app.get("/",(req,res)=>{
   res.json({status:"Tipstorm API running"})
 })
 
-/* ================= DATABASE ================= */
+/* ================= DATABASE (FIXED) ================= */
 
-mongoose.connect(process.env.MONGO_URI,{
-  useNewUrlParser:true,
-  useUnifiedTopology:true
-})
+mongoose.connect(process.env.MONGO_URI)
 .then(()=>console.log("MongoDB connected"))
 .catch(err=>{
   console.error("MongoDB error:",err)
@@ -80,107 +87,72 @@ const SubscriptionRequest = mongoose.model("SubscriptionRequest",requestSchema)
 /* ================= AUTO EXPIRE PREMIUM ================= */
 
 app.use(async(req,res,next)=>{
-
   try{
-
     const now = new Date()
-
     await User.updateMany(
       {premium:true,expiresAt:{$lt:now}},
       {premium:false,plan:"free",expiresAt:null}
     )
-
   }catch(err){
     console.log("Expire check error",err)
   }
-
   next()
-
 })
 
 /* ================= VERIFY ADMIN ================= */
 
 function verifyAdmin(req,res,next){
-
   try{
-
     const token = req.headers.authorization?.split(" ")[1]
-
     if(!token){
       return res.status(403).json({success:false,message:"No token"})
     }
-
     const decoded = jwt.verify(token,SECRET)
-
     if(decoded.role !== "admin"){
       return res.status(403).json({success:false,message:"Not admin"})
     }
-
     req.user = decoded
     next()
-
   }catch(err){
-
     return res.status(403).json({success:false,message:"Token invalid"})
-
   }
-
 }
 
 /* ================= REGISTER ================= */
 
 app.post("/register",async(req,res)=>{
-
   try{
-
     const {email,password} = req.body
-
     if(!email || !password){
       return res.status(400).json({success:false,message:"Missing fields"})
     }
-
     const exists = await User.findOne({email})
-
     if(exists){
       return res.status(400).json({success:false,message:"User exists"})
     }
-
     const hashed = bcrypt.hashSync(password,10)
-
-    await User.create({
-      email,
-      password:hashed
-    })
-
+    await User.create({email,password:hashed})
     res.json({success:true})
-
   }catch(err){
-
     console.error("Register error:",err)
     res.status(500).json({success:false})
-
   }
-
 })
 
 /* ================= LOGIN ================= */
 
 app.post("/login",async(req,res)=>{
-
   try{
-
     const {email,password} = req.body
-
     const user = await User.findOne({email})
 
     if(!user){
-      return res.json({success:false})
+      return res.status(404).json({success:false,message:"User not found"})
     }
 
     const match = bcrypt.compareSync(password,user.password)
-
     if(!match){
-      return res.json({success:false})
+      return res.status(401).json({success:false,message:"Wrong password"})
     }
 
     const token = jwt.sign(
@@ -196,40 +168,28 @@ app.post("/login",async(req,res)=>{
         email:user.email,
         role:user.role,
         plan:user.plan,
-        premium:user.premium,
-        expiresAt:user.expiresAt
+        premium:user.premium
       }
     })
-
   }catch(err){
-
     console.error("Login error:",err)
-    res.status(500).json({success:false})
-
+    res.status(500).json({success:false,message:"Server error"})
   }
-
 })
 
 /* ================= PROFILE ================= */
 
 app.get("/profile",async(req,res)=>{
-
   try{
-
     const token = req.headers.authorization?.split(" ")[1]
-
     if(!token){
       return res.status(401).json({success:false})
     }
-
     const decoded = jwt.verify(token,SECRET)
-
     const user = await User.findById(decoded.id)
-
     if(!user){
       return res.status(404).json({success:false})
     }
-
     res.json({
       success:true,
       user:{
@@ -240,23 +200,16 @@ app.get("/profile",async(req,res)=>{
         expiresAt:user.expiresAt
       }
     })
-
   }catch(err){
-
     res.status(401).json({success:false})
-
   }
-
 })
 
 /* ================= CREATE SLIP ================= */
 
 app.post("/slips",verifyAdmin,async(req,res)=>{
-
   try{
-
     const {date,games,access} = req.body
-
     if(!games || games.length === 0){
       return res.status(400).json({success:false,message:"No games"})
     }
@@ -273,28 +226,18 @@ app.post("/slips",verifyAdmin,async(req,res)=>{
       games
     })
 
-    res.json({
-      success:true,
-      slip
-    })
-
+    res.json({success:true,slip})
   }catch(err){
-
     console.error("Slip error:",err)
     res.status(500).json({success:false})
-
   }
-
 })
 
-/* ================= GET SLIPS (VIP LOCK SYSTEM) ================= */
+/* ================= GET SLIPS (VIP LOCK) ================= */
 
 app.get("/slips",async(req,res)=>{
-
   try{
-
     const token = req.headers.authorization?.split(" ")[1]
-
     let user = null
 
     if(token){
@@ -316,16 +259,13 @@ app.get("/slips",async(req,res)=>{
       .limit(limit)
 
     const filtered = slips.map(slip=>{
-
       if(slip.access === "vip" && (!user || !user.premium)){
         return {
           ...slip._doc,
           games:[{home:"🔒 VIP LOCKED"}]
         }
       }
-
       return slip
-
     })
 
     res.json({
@@ -333,14 +273,10 @@ app.get("/slips",async(req,res)=>{
       slips:filtered,
       pages:Math.ceil(total/limit)
     })
-
   }catch(err){
-
     console.error("Get slips error:",err)
     res.status(500).json({success:false})
-
   }
-
 })
 
 /* ================= SERVER ================= */
