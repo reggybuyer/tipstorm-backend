@@ -220,15 +220,14 @@ app.get("/slips", async (req, res) => {
 
     const slips = await Slip.find().sort({ createdAt: -1 });
 
+    // ✅ ADMIN sees everything exactly as stored
+    if (user && user.role === "admin") {
+      return res.json({ success: true, slips });
+    }
+
     const planOrder = ["free", "weekly", "monthly", "vip"];
 
     const filtered = slips.map((slip) => {
-
-      // ADMIN can see everything
-      if (user && user.role === "admin") {
-        return slip;
-      }
-
       let userPlanIndex = 0;
       if (user?.plan) userPlanIndex = planOrder.indexOf(user.plan);
 
@@ -239,7 +238,9 @@ app.get("/slips", async (req, res) => {
           _id: slip._id,
           date: slip.date,
           access: slip.access,
-          games: [{ home: "🔒 LOCKED", away: "", odds: "", type: "", result: "" }],
+          games: [
+            { home: "🔒 LOCKED", away: "", odds: "", type: "", result: "" },
+          ],
           totalOdds: slip.totalOdds,
         };
       }
@@ -249,10 +250,11 @@ app.get("/slips", async (req, res) => {
 
     res.json({ success: true, slips: filtered });
 
-  } catch (err) {
+  } catch {
     res.status(500).json({ success: false });
   }
 }); 
+
 
 
 /* ================= REQUEST SUBSCRIPTION ================= */
