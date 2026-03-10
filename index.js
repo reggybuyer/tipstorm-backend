@@ -210,6 +210,7 @@ app.get("/slips", async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     let user = null;
+
     if (token) {
       try {
         const decoded = jwt.verify(token, SECRET);
@@ -219,9 +220,15 @@ app.get("/slips", async (req, res) => {
 
     const slips = await Slip.find().sort({ createdAt: -1 });
 
+    const planOrder = ["free", "weekly", "monthly", "vip"];
+
     const filtered = slips.map((slip) => {
-      // Determine access based on plan hierarchy
-      const planOrder = ["free", "weekly", "monthly", "vip"];
+
+      // ADMIN can see everything
+      if (user && user.role === "admin") {
+        return slip;
+      }
+
       let userPlanIndex = 0;
       if (user?.plan) userPlanIndex = planOrder.indexOf(user.plan);
 
@@ -241,10 +248,12 @@ app.get("/slips", async (req, res) => {
     });
 
     res.json({ success: true, slips: filtered });
-  } catch {
+
+  } catch (err) {
     res.status(500).json({ success: false });
   }
-});
+}); 
+
 
 /* ================= REQUEST SUBSCRIPTION ================= */
 app.post("/request-subscription", async (req, res) => {
