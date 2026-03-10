@@ -9,9 +9,7 @@ const app = express();
 const SECRET = process.env.JWT_SECRET || "tipstormsecret";
 
 /* ================= MIDDLEWARE ================= */
-
 app.use(express.json());
-
 app.use(
   cors({
     origin: [
@@ -34,14 +32,12 @@ app.use((req, res, next) => {
 });
 
 /* ================= DATABASE ================= */
-
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error("MongoDB error:", err));
 
 /* ================= SCHEMAS ================= */
-
 const userSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, unique: true },
@@ -88,7 +84,6 @@ const SubscriptionRequest = mongoose.model(
 );
 
 /* ================= AUTO EXPIRE PREMIUM ================= */
-
 app.use(async (req, res, next) => {
   try {
     const now = new Date();
@@ -103,65 +98,47 @@ app.use(async (req, res, next) => {
 });
 
 /* ================= VERIFY ADMIN ================= */
-
 function verifyAdmin(req, res, next) {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) return res.status(403).json({ success: false });
-
     const decoded = jwt.verify(token, SECRET);
-
     if (decoded.role !== "admin")
       return res.status(403).json({ success: false });
-
     req.user = decoded;
     next();
-  } catch {
+  } catch (err) {
     return res.status(403).json({ success: false });
   }
 }
 
 /* ================= REGISTER ================= */
-
 app.post("/register", async (req, res) => {
   try {
     const { email, password } = req.body;
-
+    if (!email || !password)
+      return res.status(400).json({ success: false });
     const exists = await User.findOne({ email });
     if (exists) return res.status(400).json({ success: false });
-
     const hashed = bcrypt.hashSync(password, 10);
-
-    await User.create({
-      email,
-      password: hashed,
-    });
-
+    await User.create({ email, password: hashed });
     res.json({ success: true });
-  } catch {
+  } catch (err) {
     res.status(500).json({ success: false });
   }
 });
 
 /* ================= LOGIN ================= */
-
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
-
     const user = await User.findOne({ email });
-
     if (!user) return res.status(404).json({ success: false });
-
     const match = bcrypt.compareSync(password, user.password);
     if (!match) return res.status(401).json({ success: false });
-
-    const token = jwt.sign(
-      { id: user._id, role: user.role },
-      SECRET,
-      { expiresIn: "7d" }
-    );
-
+    const token = jwt.sign({ id: user._id, role: user.role }, SECRET, {
+      expiresIn: "7d",
+    });
     res.json({
       success: true,
       token,
@@ -170,31 +147,59 @@ app.post("/login", async (req, res) => {
         role: user.role,
         plan: user.plan,
         premium: user.premium,
+        expiresAt: user.expiresAt,
       },
     });
-  } catch {
+  } catch (err) {
     res.status(500).json({ success: false });
   }
 });
 
-/* ================= CREATE SLIP ================= */
+/* ================= PROFILE ================= */
+app.get("/profile", async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ success: false });
+    const decoded = jwt.verify(token, SECRET);
+    const user = await User.findById(decoded.id);
+    if (!user) return res.status(404).json({ success: false });
+    res.json({
+      success: true,
+      user: {
+        email: user.email,
+        role: user.role,
+        plan: user.plan,
+        premium: user.premium,
+        expiresAt: user.expiresAt,
+      },
+    });
+  } catch {
+    res.status(401).json({ success: false });
+  }
+});
 
+/* ================= CREATE SLIP ================= */
 app.post("/slips", verifyAdmin, async (req, res) => {
   try {
     const { date, games, access } = req.body;
-
+    if (!games || games.length === 0)
+      return res.status(400).json({ success: false });
     const totalOdds = games.reduce(
       (acc, g) => acc * (parseFloat(g.odds) || 1),
       1
     );
-
     const slip = await Slip.create({
       date,
       access,
       totalOdds,
-      games,
+      games: games.map((g) => ({
+        home: g.home,
+        away: g.away,
+        odds: parseFloat(g.odds) || 1,
+        type: g.type || "Over 1.5",
+        result: g.result || "pending",
+      })),
     });
-
     res.json({ success: true, slip });
   } catch {
     res.status(500).json({ success: false });
@@ -202,7 +207,6 @@ app.post("/slips", verifyAdmin, async (req, res) => {
 });
 
 /* ================= GET SLIPS ================= */
-
 app.get("/slips", async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
@@ -217,26 +221,15 @@ app.get("/slips", async (req, res) => {
 
     const slips = await Slip.find().sort({ createdAt: -1 });
 
-    /* ADMIN sees ALL plans with no filtering */
-
+    // ✅ Admins always see all plans
     if (user && user.role === "admin") {
-      return res.json({
-        success: true,
-        slips: slips,
-      });
+      return res.json({ success: true, slips });
     }
 
-    /* USER filtering */
-
     const planOrder = ["free", "weekly", "monthly", "vip"];
-
     const filtered = slips.map((slip) => {
       let userPlanIndex = 0;
-
-      if (user?.plan) {
-        userPlanIndex = planOrder.indexOf(user.plan);
-      }
-
+      if (user?.plan) userPlanIndex = planOrder.indexOf(user.plan);
       const slipPlanIndex = planOrder.indexOf(slip.access);
 
       if (!user || userPlanIndex < slipPlanIndex) {
@@ -244,127 +237,120 @@ app.get("/slips", async (req, res) => {
           _id: slip._id,
           date: slip.date,
           access: slip.access,
-          totalOdds: slip.totalOdds,
           games: [
-            {
-              home: "🔒 LOCKED",
-              away: "",
-              odds: "",
-              type: "",
-              result: "",
-            },
+            { home: "🔒 LOCKED", away: "", odds: "", type: "", result: "" },
           ],
+          totalOdds: slip.totalOdds,
         };
       }
 
       return slip;
     });
 
-    res.json({
-      success: true,
-      slips: filtered,
-    });
+    res.json({ success: true, slips: filtered });
   } catch {
     res.status(500).json({ success: false });
   }
 });
 
-/* ================= SUBSCRIPTION REQUEST ================= */
-
+/* ================= REQUEST SUBSCRIPTION ================= */
 app.post("/request-subscription", async (req, res) => {
   try {
     const { email, plan, message } = req.body;
-
+    if (!email || !plan)
+      return res
+        .status(400)
+        .json({ success: false, message: "Email and plan required" });
     const request = await SubscriptionRequest.create({
       email,
       plan,
       message,
       status: "pending",
     });
-
     res.json({ success: true, request });
-  } catch {
+  } catch (err) {
+    console.error("Request subscription error:", err);
     res.status(500).json({ success: false });
   }
 });
 
-/* ================= USERS ================= */
-
+/* ================= GET USERS ================= */
 app.get("/all-users", verifyAdmin, async (req, res) => {
   const users = await User.find();
   res.json({ success: true, users });
 });
 
-/* ================= SUBSCRIPTION REQUESTS ================= */
-
+/* ================= GET SUBSCRIPTION REQUESTS ================= */
 app.get("/subscription-requests", verifyAdmin, async (req, res) => {
   const requests = await SubscriptionRequest.find().sort({ createdAt: -1 });
   res.json({ success: true, requests });
 });
 
 /* ================= APPROVE REQUEST ================= */
-
 app.post("/approve-request", verifyAdmin, async (req, res) => {
   const { requestId } = req.body;
-
   const reqDoc = await SubscriptionRequest.findById(requestId);
   if (!reqDoc) return res.status(404).json({ success: false });
 
   const user = await User.findOne({ email: reqDoc.email });
   if (!user) return res.status(404).json({ success: false });
 
-  let duration = 30;
+  // ✅ Prevent reactivation before expiry
+  if (!user.expiresAt || new Date() > user.expiresAt) {
+    let duration = 30;
+    if (reqDoc.plan === "weekly") duration = 7;
+    if (reqDoc.plan === "monthly") duration = 30;
+    if (reqDoc.plan === "vip") duration = 30;
 
-  if (reqDoc.plan === "weekly") duration = 7;
-  if (reqDoc.plan === "monthly") duration = 30;
-  if (reqDoc.plan === "vip") duration = 30;
-
-  user.plan = reqDoc.plan;
-  user.premium = true;
-  user.expiresAt = new Date(Date.now() + duration * 86400000);
-
-  await user.save();
+    user.plan = reqDoc.plan;
+    user.premium = true;
+    user.expiresAt = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
+    await user.save();
+  }
 
   reqDoc.status = "approved";
   await reqDoc.save();
-
   res.json({ success: true });
 });
 
-/* ================= RESULT UPDATE ================= */
-
+/* ================= SLIP RESULT UPDATE ================= */
 app.post("/slip-result", verifyAdmin, async (req, res) => {
   try {
     const { slipId, gameIndex, result } = req.body;
-
     const slip = await Slip.findById(slipId);
+    if (!slip) return res.status(404).json({ success: false });
+    if (!slip.games[gameIndex]) return res.status(404).json({ success: false });
 
     slip.games[gameIndex].result = result;
-
     await slip.save();
-
     res.json({ success: true, slip });
   } catch {
     res.status(500).json({ success: false });
   }
 });
 
-/* ================= DELETE ================= */
-
+/* ================= DELETE SLIP ================= */
 app.delete("/delete-slip/:id", verifyAdmin, async (req, res) => {
-  await Slip.findByIdAndDelete(req.params.id);
-  res.json({ success: true });
+  try {
+    await Slip.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ success: false });
+  }
 });
 
+/* ================= DELETE USER ================= */
 app.delete("/delete-user/:id", verifyAdmin, async (req, res) => {
-  await User.findByIdAndDelete(req.params.id);
-  res.json({ success: true });
+  try {
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ success: false });
+  }
 });
 
 /* ================= SERVER ================= */
-
 const PORT = process.env.PORT || 5000;
-
 app.listen(PORT, () => {
   console.log(`Server running on ${PORT}`);
 }); 
