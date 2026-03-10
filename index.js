@@ -4,12 +4,13 @@ const cors = require("cors");
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const app = express();
 
+const app = express();
 const SECRET = process.env.JWT_SECRET || "tipstormsecret";
 
 /* ================= MIDDLEWARE ================= */
 app.use(express.json());
+
 app.use(
   cors({
     origin: [
@@ -22,15 +23,6 @@ app.use(
   })
 );
 
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
-  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
-  res.header("Access-Control-Allow-Credentials", "true");
-  if (req.method === "OPTIONS") return res.sendStatus(204);
-  next();
-});
-
 /* ================= DATABASE ================= */
 mongoose
   .connect(process.env.MONGO_URI)
@@ -38,6 +30,7 @@ mongoose
   .catch((err) => console.error("MongoDB error:", err));
 
 /* ================= SCHEMAS ================= */
+
 const userSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, unique: true },
@@ -84,9 +77,11 @@ const SubscriptionRequest = mongoose.model(
 );
 
 /* ================= AUTO EXPIRE PREMIUM ================= */
+
 app.use(async (req, res, next) => {
   try {
     const now = new Date();
+
     await User.updateMany(
       { premium: true, expiresAt: { $lt: now } },
       { premium: false, plan: "free", expiresAt: null }
@@ -94,18 +89,25 @@ app.use(async (req, res, next) => {
   } catch (err) {
     console.log("Expire check error", err);
   }
+
   next();
 });
 
 /* ================= VERIFY ADMIN ================= */
+
 function verifyAdmin(req, res, next) {
   try {
     const token = req.headers.authorization?.split(" ")[1];
+
     if (!token) return res.status(403).json({ success: false });
+
     const decoded = jwt.verify(token, SECRET);
+
     if (decoded.role !== "admin")
       return res.status(403).json({ success: false });
+
     req.user = decoded;
+
     next();
   } catch (err) {
     return res.status(403).json({ success: false });
@@ -113,36 +115,50 @@ function verifyAdmin(req, res, next) {
 }
 
 /* ================= REGISTER ================= */
+
 app.post("/register", async (req, res) => {
   try {
     const { email, password } = req.body;
+
     if (!email || !password)
       return res.status(400).json({ success: false });
 
     const exists = await User.findOne({ email });
+
     if (exists) return res.status(400).json({ success: false });
 
     const hashed = bcrypt.hashSync(password, 10);
-    await User.create({ email, password: hashed });
+
+    await User.create({
+      email,
+      password: hashed,
+    });
+
     res.json({ success: true });
-  } catch (err) {
+  } catch {
     res.status(500).json({ success: false });
   }
 });
 
 /* ================= LOGIN ================= */
+
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
+
     const user = await User.findOne({ email });
+
     if (!user) return res.status(404).json({ success: false });
 
     const match = bcrypt.compareSync(password, user.password);
+
     if (!match) return res.status(401).json({ success: false });
 
-    const token = jwt.sign({ id: user._id, role: user.role }, SECRET, {
-      expiresIn: "7d",
-    });
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      SECRET,
+      { expiresIn: "7d" }
+    );
 
     res.json({
       success: true,
@@ -155,19 +171,23 @@ app.post("/login", async (req, res) => {
         expiresAt: user.expiresAt,
       },
     });
-  } catch (err) {
+  } catch {
     res.status(500).json({ success: false });
   }
 });
 
 /* ================= PROFILE ================= */
+
 app.get("/profile", async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
+
     if (!token) return res.status(401).json({ success: false });
 
     const decoded = jwt.verify(token, SECRET);
+
     const user = await User.findById(decoded.id);
+
     if (!user) return res.status(404).json({ success: false });
 
     res.json({
@@ -186,9 +206,11 @@ app.get("/profile", async (req, res) => {
 });
 
 /* ================= CREATE SLIP ================= */
+
 app.post("/slips", verifyAdmin, async (req, res) => {
   try {
     const { date, games, access } = req.body;
+
     if (!games || games.length === 0)
       return res.status(400).json({ success: false });
 
@@ -217,10 +239,13 @@ app.post("/slips", verifyAdmin, async (req, res) => {
 });
 
 /* ================= GET SLIPS ================= */
+
 app.get("/slips", async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
+
     let user = null;
+
     if (token) {
       try {
         const decoded = jwt.verify(token, SECRET);
@@ -229,21 +254,40 @@ app.get("/slips", async (req, res) => {
     }
 
     const slips = await Slip.find().sort({ createdAt: -1 });
+
+    /* ADMIN SEES EVERYTHING */
+
+    if (user && user.role === "admin") {
+      return res.json({ success: true, slips });
+    }
+
+    const planOrder = ["free", "weekly", "monthly", "vip"];
+
     const filtered = slips.map((slip) => {
-      if (
-        slip.access !== "free" &&
-        (!user || !user.premium || slip.access !== user.plan) &&
-        user?.plan !== "vip"
-      ) {
+      let userPlanIndex = 0;
+
+      if (user?.plan) userPlanIndex = planOrder.indexOf(user.plan);
+
+      const slipPlanIndex = planOrder.indexOf(slip.access);
+
+      if (!user || userPlanIndex < slipPlanIndex) {
         return {
           _id: slip._id,
           date: slip.date,
           access: slip.access,
           games: [
-            { home: "🔒 Locked", away: "", odds: "", type: "", result: "" },
+            {
+              home: "🔒 LOCKED",
+              away: "",
+              odds: "",
+              type: "",
+              result: "",
+            },
           ],
+          totalOdds: slip.totalOdds,
         };
       }
+
       return slip;
     });
 
@@ -254,13 +298,13 @@ app.get("/slips", async (req, res) => {
 });
 
 /* ================= REQUEST SUBSCRIPTION ================= */
+
 app.post("/request-subscription", async (req, res) => {
   try {
     const { email, plan, message } = req.body;
+
     if (!email || !plan)
-      return res
-        .status(400)
-        .json({ success: false, message: "Email and plan required" });
+      return res.status(400).json({ success: false });
 
     const request = await SubscriptionRequest.create({
       email,
@@ -270,74 +314,78 @@ app.post("/request-subscription", async (req, res) => {
     });
 
     res.json({ success: true, request });
-  } catch (err) {
-    console.error("Request subscription error:", err);
+  } catch {
     res.status(500).json({ success: false });
   }
 });
 
-/* ================= APPROVE REQUEST ================= */
-app.post("/approve-request", verifyAdmin, async (req, res) => {
-  try {
-    const { requestId } = req.body;
-    const reqDoc = await SubscriptionRequest.findById(requestId);
-    if (!reqDoc)
-      return res.status(404).json({ success: false, message: "Request not found" });
+/* ================= USERS ================= */
 
-    const user = await User.findOne({ email: reqDoc.email });
-    if (!user)
-      return res.status(404).json({ success: false, message: "User not found" });
+app.get("/all-users", verifyAdmin, async (req, res) => {
+  const users = await User.find();
 
-    const now = new Date();
-
-    // Prevent reactivation if plan still active
-    if (user.premium && user.expiresAt && user.expiresAt > now) {
-      return res.status(400).json({
-        success: false,
-        message: `User already has an active ${user.plan.toUpperCase()} plan`,
-      });
-    }
-
-    // Set duration
-    let duration = 0;
-    switch (reqDoc.plan) {
-      case "weekly":
-        duration = 7;
-        break;
-      case "monthly":
-        duration = 30;
-        break;
-      case "vip":
-        duration = 30;
-        break;
-      default:
-        duration = 0;
-    }
-
-    user.plan = reqDoc.plan;
-    user.premium = true;
-    user.expiresAt = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
-    await user.save();
-
-    reqDoc.status = "approved";
-    await reqDoc.save();
-
-    res.json({ success: true, user });
-  } catch (err) {
-    console.log(err);
-    res.status(500).json({ success: false, message: "Server error" });
-  }
+  res.json({ success: true, users });
 });
 
-/* ================= SLIP RESULT UPDATE ================= */
+/* ================= SUBSCRIPTION REQUESTS ================= */
+
+app.get("/subscription-requests", verifyAdmin, async (req, res) => {
+  const requests = await SubscriptionRequest.find().sort({
+    createdAt: -1,
+  });
+
+  res.json({ success: true, requests });
+});
+
+/* ================= APPROVE REQUEST ================= */
+
+app.post("/approve-request", verifyAdmin, async (req, res) => {
+  const { requestId } = req.body;
+
+  const reqDoc = await SubscriptionRequest.findById(requestId);
+
+  if (!reqDoc) return res.status(404).json({ success: false });
+
+  const user = await User.findOne({ email: reqDoc.email });
+
+  if (!user) return res.status(404).json({ success: false });
+
+  if (!user.expiresAt || new Date() > user.expiresAt) {
+    user.plan = reqDoc.plan;
+    user.premium = true;
+
+    let duration = 30;
+
+    if (reqDoc.plan === "weekly") duration = 7;
+    if (reqDoc.plan === "monthly") duration = 30;
+    if (reqDoc.plan === "vip") duration = 30;
+
+    user.expiresAt = new Date(
+      Date.now() + duration * 24 * 60 * 60 * 1000
+    );
+
+    await user.save();
+  }
+
+  reqDoc.status = "approved";
+
+  await reqDoc.save();
+
+  res.json({ success: true });
+});
+
+/* ================= UPDATE RESULT ================= */
+
 app.post("/slip-result", verifyAdmin, async (req, res) => {
   try {
     const { slipId, gameIndex, result } = req.body;
+
     const slip = await Slip.findById(slipId);
+
     if (!slip) return res.status(404).json({ success: false });
-    if (!slip.games[gameIndex]) return res.status(404).json({ success: false });
 
     slip.games[gameIndex].result = result;
+
     await slip.save();
 
     res.json({ success: true, slip });
@@ -347,9 +395,11 @@ app.post("/slip-result", verifyAdmin, async (req, res) => {
 });
 
 /* ================= DELETE SLIP ================= */
+
 app.delete("/delete-slip/:id", verifyAdmin, async (req, res) => {
   try {
     await Slip.findByIdAndDelete(req.params.id);
+
     res.json({ success: true });
   } catch {
     res.status(500).json({ success: false });
@@ -357,9 +407,11 @@ app.delete("/delete-slip/:id", verifyAdmin, async (req, res) => {
 });
 
 /* ================= DELETE USER ================= */
+
 app.delete("/delete-user/:id", verifyAdmin, async (req, res) => {
   try {
     await User.findByIdAndDelete(req.params.id);
+
     res.json({ success: true });
   } catch {
     res.status(500).json({ success: false });
@@ -367,7 +419,9 @@ app.delete("/delete-user/:id", verifyAdmin, async (req, res) => {
 });
 
 /* ================= SERVER ================= */
+
 const PORT = process.env.PORT || 5000;
+
 app.listen(PORT, () => {
   console.log(`Server running on ${PORT}`);
 }); 
