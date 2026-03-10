@@ -292,7 +292,7 @@ app.post("/slip-result", verifyAdmin, async (req, res) => {
     if (!slip.games[gameIndex]) return res.status(404).json({ success: false });
     slip.games[gameIndex].result = result;
     await slip.save();
-    res.json({ success: true });
+    res.json({ success: true, slip }); // <-- updated to return slip
   } catch {
     res.status(500).json({ success: false });
   }
