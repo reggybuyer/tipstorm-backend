@@ -248,13 +248,34 @@ app.get("/slips", async (req, res) => {
   }
 });
 
+/* ================= REQUEST SUBSCRIPTION ================= */
+app.post("/request-subscription", async (req, res) => {
+  try {
+    const { email, plan, message } = req.body;
+    if (!email || !plan)
+      return res.status(400).json({ success: false, message: "Email and plan required" });
+
+    const request = await SubscriptionRequest.create({
+      email,
+      plan,
+      message,
+      status: "pending",
+    });
+
+    res.json({ success: true, request });
+  } catch (err) {
+    console.error("Request subscription error:", err);
+    res.status(500).json({ success: false });
+  }
+});
+
 /* ================= USERS ================= */
 app.get("/all-users", verifyAdmin, async (req, res) => {
   const users = await User.find();
   res.json({ success: true, users });
 });
 
-/* ================= REQUESTS ================= */
+/* ================= SUBSCRIPTION REQUESTS ================= */
 app.get("/subscription-requests", verifyAdmin, async (req, res) => {
   const requests = await SubscriptionRequest.find();
   res.json({ success: true, requests });
@@ -292,7 +313,7 @@ app.post("/slip-result", verifyAdmin, async (req, res) => {
     if (!slip.games[gameIndex]) return res.status(404).json({ success: false });
     slip.games[gameIndex].result = result;
     await slip.save();
-    res.json({ success: true, slip }); // <-- updated to return slip
+    res.json({ success: true, slip });
   } catch {
     res.status(500).json({ success: false });
   }
