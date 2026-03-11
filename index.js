@@ -115,13 +115,10 @@ app.post("/register", async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password)
       return res.status(400).json({ success: false });
-
     const exists = await User.findOne({ email });
     if (exists) return res.status(400).json({ success: false });
-
     const hashed = bcrypt.hashSync(password, 10);
     await User.create({ email, password: hashed });
-
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false });
@@ -134,14 +131,11 @@ app.post("/login", async (req, res) => {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
     if (!user) return res.status(404).json({ success: false });
-
     const match = bcrypt.compareSync(password, user.password);
     if (!match) return res.status(401).json({ success: false });
-
     const token = jwt.sign({ id: user._id, role: user.role }, SECRET, {
       expiresIn: "7d",
     });
-
     res.json({
       success: true,
       token,
@@ -163,11 +157,9 @@ app.get("/profile", async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) return res.status(401).json({ success: false });
-
     const decoded = jwt.verify(token, SECRET);
     const user = await User.findById(decoded.id);
     if (!user) return res.status(404).json({ success: false });
-
     res.json({
       success: true,
       user: {
@@ -189,9 +181,7 @@ app.post("/slips", verifyAdmin, async (req, res) => {
     const { date, games, access } = req.body;
     if (!games || games.length === 0)
       return res.status(400).json({ success: false });
-
     const totalOdds = games.reduce((acc, g) => acc * (parseFloat(g.odds) || 1), 1);
-
     const slip = await Slip.create({
       date,
       access,
@@ -204,7 +194,6 @@ app.post("/slips", verifyAdmin, async (req, res) => {
         result: g.result || "pending",
       })),
     });
-
     res.json({ success: true, slip });
   } catch {
     res.status(500).json({ success: false });
@@ -216,7 +205,6 @@ app.get("/slips", async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     let user = null;
-
     if (token) {
       try {
         const decoded = jwt.verify(token, SECRET);
@@ -225,37 +213,40 @@ app.get("/slips", async (req, res) => {
     }
 
     const slips = await Slip.find().sort({ createdAt: -1 });
-
-    // Admin sees all slips
-    if (user && user.role === "admin") {
-      return res.json({ success: true, slips });
-    }
-
-    // Normal user sees based on plan
     const planOrder = ["free", "weekly", "monthly", "vip"];
+
     const filtered = slips.map((slip) => {
+      // Admin sees all slips
+      if (user?.role === "admin") return slip;
+
       let userPlanIndex = 0;
       if (user?.plan) userPlanIndex = planOrder.indexOf(user.plan);
       const slipPlanIndex = planOrder.indexOf(slip.access);
 
+      // User plan < slip plan → lock entire slip
       if (!user || userPlanIndex < slipPlanIndex) {
         return {
           _id: slip._id,
           date: slip.date,
           access: slip.access,
           games: [
-            {
-              home: "🔒 LOCKED",
-              away: "",
-              odds: "",
-              type: "",
-              result: "",
-            },
+            { home: "🔒 LOCKED", away: "", odds: "", type: "", result: "" },
           ],
           totalOdds: slip.totalOdds,
         };
       }
 
+      // Free plan → show first 2 games, lock rest
+      if (user.plan === "free") {
+        const games = slip.games.map((g, i) =>
+          i < 2
+            ? g
+            : { home: "🔒 LOCKED", away: "", odds: "", type: "", result: "" }
+        );
+        return { ...slip.toObject(), games };
+      }
+
+      // Premium → show all games
       return slip;
     });
 
@@ -272,14 +263,12 @@ app.post("/request-subscription", async (req, res) => {
     const { email, plan, message } = req.body;
     if (!email || !plan)
       return res.status(400).json({ success: false, message: "Email and plan required" });
-
     const request = await SubscriptionRequest.create({
       email,
       plan,
       message,
       status: "pending",
     });
-
     res.json({ success: true, request });
   } catch (err) {
     console.error("Request subscription error:", err);
@@ -304,11 +293,9 @@ app.post("/approve-request", verifyAdmin, async (req, res) => {
   const { requestId } = req.body;
   const reqDoc = await SubscriptionRequest.findById(requestId);
   if (!reqDoc) return res.status(404).json({ success: false });
-
   const user = await User.findOne({ email: reqDoc.email });
   if (!user) return res.status(404).json({ success: false });
 
-  // Prevent reactivation before expiry
   const now = new Date();
   if (!user.expiresAt || now > user.expiresAt) {
     user.plan = reqDoc.plan;
@@ -320,7 +307,6 @@ app.post("/approve-request", verifyAdmin, async (req, res) => {
 
   reqDoc.status = "approved";
   await reqDoc.save();
-
   res.json({ success: true });
 });
 
@@ -331,7 +317,6 @@ app.post("/slip-result", verifyAdmin, async (req, res) => {
     const slip = await Slip.findById(slipId);
     if (!slip) return res.status(404).json({ success: false });
     if (!slip.games[gameIndex]) return res.status(404).json({ success: false });
-
     slip.games[gameIndex].result = result;
     await slip.save();
     res.json({ success: true, slip });
