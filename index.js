@@ -9,7 +9,9 @@ const app = express();
 const SECRET = process.env.JWT_SECRET || "tipstormsecret";
 
 /* ================= MIDDLEWARE ================= */
+
 app.use(express.json());
+
 app.use(
   cors({
     origin: [
@@ -32,12 +34,14 @@ app.use((req, res, next) => {
 });
 
 /* ================= DATABASE ================= */
+
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch((err) => console.error("MongoDB error:", err));
 
 /* ================= SCHEMAS ================= */
+
 const userSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, unique: true },
@@ -78,12 +82,17 @@ const requestSchema = new mongoose.Schema({
 
 const User = mongoose.model("User", userSchema);
 const Slip = mongoose.model("Slip", slipSchema);
-const SubscriptionRequest = mongoose.model("SubscriptionRequest", requestSchema);
+const SubscriptionRequest = mongoose.model(
+  "SubscriptionRequest",
+  requestSchema
+);
 
 /* ================= AUTO EXPIRE PREMIUM ================= */
+
 app.use(async (req, res, next) => {
   try {
     const now = new Date();
+
     await User.updateMany(
       { premium: true, expiresAt: { $lt: now } },
       { premium: false, plan: "free", expiresAt: null }
@@ -91,17 +100,22 @@ app.use(async (req, res, next) => {
   } catch (err) {
     console.log("Expire check error", err);
   }
+
   next();
 });
 
 /* ================= VERIFY ADMIN ================= */
+
 function verifyAdmin(req, res, next) {
   try {
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) return res.status(403).json({ success: false });
+
     const decoded = jwt.verify(token, SECRET);
+
     if (decoded.role !== "admin")
       return res.status(403).json({ success: false });
+
     req.user = decoded;
     next();
   } catch (err) {
@@ -110,15 +124,24 @@ function verifyAdmin(req, res, next) {
 }
 
 /* ================= REGISTER ================= */
+
 app.post("/register", async (req, res) => {
   try {
     const { email, password } = req.body;
+
     if (!email || !password)
       return res.status(400).json({ success: false });
+
     const exists = await User.findOne({ email });
     if (exists) return res.status(400).json({ success: false });
+
     const hashed = bcrypt.hashSync(password, 10);
-    await User.create({ email, password: hashed });
+
+    await User.create({
+      email,
+      password: hashed,
+    });
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false });
@@ -126,16 +149,23 @@ app.post("/register", async (req, res) => {
 });
 
 /* ================= LOGIN ================= */
+
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
+
     const user = await User.findOne({ email });
     if (!user) return res.status(404).json({ success: false });
+
     const match = bcrypt.compareSync(password, user.password);
     if (!match) return res.status(401).json({ success: false });
-    const token = jwt.sign({ id: user._id, role: user.role }, SECRET, {
-      expiresIn: "7d",
-    });
+
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      SECRET,
+      { expiresIn: "7d" }
+    );
+
     res.json({
       success: true,
       token,
@@ -153,13 +183,18 @@ app.post("/login", async (req, res) => {
 });
 
 /* ================= PROFILE ================= */
+
 app.get("/profile", async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
+
     if (!token) return res.status(401).json({ success: false });
+
     const decoded = jwt.verify(token, SECRET);
     const user = await User.findById(decoded.id);
+
     if (!user) return res.status(404).json({ success: false });
+
     res.json({
       success: true,
       user: {
@@ -176,12 +211,19 @@ app.get("/profile", async (req, res) => {
 });
 
 /* ================= CREATE SLIP ================= */
+
 app.post("/slips", verifyAdmin, async (req, res) => {
   try {
     const { date, games, access } = req.body;
+
     if (!games || games.length === 0)
       return res.status(400).json({ success: false });
-    const totalOdds = games.reduce((acc, g) => acc * (parseFloat(g.odds) || 1), 1);
+
+    const totalOdds = games.reduce(
+      (acc, g) => acc * (parseFloat(g.odds) || 1),
+      1
+    );
+
     const slip = await Slip.create({
       date,
       access,
@@ -194,6 +236,7 @@ app.post("/slips", verifyAdmin, async (req, res) => {
         result: g.result || "pending",
       })),
     });
+
     res.json({ success: true, slip });
   } catch {
     res.status(500).json({ success: false });
@@ -201,10 +244,13 @@ app.post("/slips", verifyAdmin, async (req, res) => {
 });
 
 /* ================= GET SLIPS ================= */
+
 app.get("/slips", async (req, res) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];
+
     let user = null;
+
     if (token) {
       try {
         const decoded = jwt.verify(token, SECRET);
@@ -213,17 +259,17 @@ app.get("/slips", async (req, res) => {
     }
 
     const slips = await Slip.find().sort({ createdAt: -1 });
+
     const planOrder = ["free", "weekly", "monthly", "vip"];
 
     const filtered = slips.map((slip) => {
-      // Admin sees all slips
       if (user?.role === "admin") return slip;
 
       let userPlanIndex = 0;
       if (user?.plan) userPlanIndex = planOrder.indexOf(user.plan);
+
       const slipPlanIndex = planOrder.indexOf(slip.access);
 
-      // User plan < slip plan → lock entire slip
       if (!user || userPlanIndex < slipPlanIndex) {
         return {
           _id: slip._id,
@@ -236,17 +282,16 @@ app.get("/slips", async (req, res) => {
         };
       }
 
-      // Free plan → show first 2 games, lock rest
       if (user.plan === "free") {
         const games = slip.games.map((g, i) =>
           i < 2
             ? g
             : { home: "🔒 LOCKED", away: "", odds: "", type: "", result: "" }
         );
+
         return { ...slip.toObject(), games };
       }
 
-      // Premium → show all games
       return slip;
     });
 
@@ -258,17 +303,23 @@ app.get("/slips", async (req, res) => {
 });
 
 /* ================= REQUEST SUBSCRIPTION ================= */
+
 app.post("/request-subscription", async (req, res) => {
   try {
     const { email, plan, message } = req.body;
+
     if (!email || !plan)
-      return res.status(400).json({ success: false, message: "Email and plan required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Email and plan required" });
+
     const request = await SubscriptionRequest.create({
       email,
       plan,
       message,
       status: "pending",
     });
+
     res.json({ success: true, request });
   } catch (err) {
     console.error("Request subscription error:", err);
@@ -276,49 +327,90 @@ app.post("/request-subscription", async (req, res) => {
   }
 });
 
-/* ================= GET ALL USERS ================= */
+/* ================= GET ALL USERS (UPDATED) ================= */
+
 app.get("/all-users", verifyAdmin, async (req, res) => {
-  const users = await User.find();
-  res.json({ success: true, users });
+  try {
+    const users = await User.find().sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      count: users.length,
+      users: users.map((u) => ({
+        id: u._id,
+        email: u.email,
+        role: u.role,
+        plan: u.plan,
+        premium: u.premium,
+        expiresAt: u.expiresAt,
+        createdAt: u.createdAt,
+      })),
+    });
+  } catch (err) {
+    console.log("GET /all-users error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Failed to load users",
+    });
+  }
 });
 
 /* ================= GET SUBSCRIPTION REQUESTS ================= */
+
 app.get("/subscription-requests", verifyAdmin, async (req, res) => {
   const requests = await SubscriptionRequest.find().sort({ createdAt: -1 });
+
   res.json({ success: true, requests });
 });
 
-/* ================= APPROVE SUBSCRIPTION REQUEST ================= */
+/* ================= APPROVE REQUEST ================= */
+
 app.post("/approve-request", verifyAdmin, async (req, res) => {
   const { requestId } = req.body;
+
   const reqDoc = await SubscriptionRequest.findById(requestId);
   if (!reqDoc) return res.status(404).json({ success: false });
+
   const user = await User.findOne({ email: reqDoc.email });
   if (!user) return res.status(404).json({ success: false });
 
   const now = new Date();
+
   if (!user.expiresAt || now > user.expiresAt) {
     user.plan = reqDoc.plan;
     user.premium = true;
+
     let duration = reqDoc.plan === "weekly" ? 7 : 30;
-    user.expiresAt = new Date(Date.now() + duration * 24 * 60 * 60 * 1000);
+
+    user.expiresAt = new Date(
+      Date.now() + duration * 24 * 60 * 60 * 1000
+    );
+
     await user.save();
   }
 
   reqDoc.status = "approved";
   await reqDoc.save();
+
   res.json({ success: true });
 });
 
 /* ================= SLIP RESULT UPDATE ================= */
+
 app.post("/slip-result", verifyAdmin, async (req, res) => {
   try {
     const { slipId, gameIndex, result } = req.body;
+
     const slip = await Slip.findById(slipId);
     if (!slip) return res.status(404).json({ success: false });
-    if (!slip.games[gameIndex]) return res.status(404).json({ success: false });
+
+    if (!slip.games[gameIndex])
+      return res.status(404).json({ success: false });
+
     slip.games[gameIndex].result = result;
+
     await slip.save();
+
     res.json({ success: true, slip });
   } catch {
     res.status(500).json({ success: false });
@@ -326,9 +418,11 @@ app.post("/slip-result", verifyAdmin, async (req, res) => {
 });
 
 /* ================= DELETE SLIP ================= */
+
 app.delete("/delete-slip/:id", verifyAdmin, async (req, res) => {
   try {
     await Slip.findByIdAndDelete(req.params.id);
+
     res.json({ success: true });
   } catch {
     res.status(500).json({ success: false });
@@ -336,9 +430,11 @@ app.delete("/delete-slip/:id", verifyAdmin, async (req, res) => {
 });
 
 /* ================= DELETE USER ================= */
+
 app.delete("/delete-user/:id", verifyAdmin, async (req, res) => {
   try {
     await User.findByIdAndDelete(req.params.id);
+
     res.json({ success: true });
   } catch {
     res.status(500).json({ success: false });
@@ -346,7 +442,9 @@ app.delete("/delete-user/:id", verifyAdmin, async (req, res) => {
 });
 
 /* ================= SERVER ================= */
+
 const PORT = process.env.PORT || 5000;
+
 app.listen(PORT, () => {
   console.log(`Server running on ${PORT}`);
 }); 
